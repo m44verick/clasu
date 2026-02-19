@@ -8,8 +8,9 @@ class Settings(BaseSettings):
     WHATSAPP_ACCESS_TOKEN: str = ""
     WHATSAPP_VERIFY_TOKEN: str = "my_secret_verify_token_123"
 
-    # Anthropic
-    ANTHROPIC_API_KEY: str = ""
+    # OpenAI
+    OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-4o"
 
     # Şirket
     COMPANY_NAME: str = "Şirket"

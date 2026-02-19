@@ -1,14 +1,14 @@
 """
-Claude AI satış ajanı.
+OpenAI GPT satış ajanı.
 
-Tool use ile ürün kataloğunu sorgular, gerektiğinde insan temsilciye devreder.
+Function calling ile ürün kataloğunu sorgular, gerektiğinde insan temsilciye devreder.
 
-Araçlar (tools):
-  search_products   – ürün arama
-  get_product       – ID ile ürün getirme
-  list_categories   – kategori listesi
-  products_by_category – kategoriye göre ürün listeleme
-  handoff_to_human  – insan temsilciye devretme
+Araçlar (functions):
+  search_products       – ürün arama
+  get_product           – ID ile ürün getirme
+  list_categories       – kategori listesi
+  products_by_category  – kategoriye göre ürün listeleme
+  handoff_to_human      – insan temsilciye devretme
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import json
 import logging
 from typing import Any
 
-import anthropic
+from openai import AsyncOpenAI
 
 from app.catalog import ProductCatalog
 from app.config import get_settings
@@ -28,80 +28,94 @@ log = logging.getLogger(__name__)
 
 TOOLS: list[dict] = [
     {
-        "name": "search_products",
-        "description": (
-            "Ürün kataloğunda anahtar kelimeyle arama yapar. "
-            "Müşteri belirli bir ürün sorduğunda kullan."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Arama terimi (ürün adı, özellik, vb.)",
+        "type": "function",
+        "function": {
+            "name": "search_products",
+            "description": (
+                "Ürün kataloğunda anahtar kelimeyle arama yapar. "
+                "Müşteri belirli bir ürün sorduğunda kullan."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Arama terimi (ürün adı, özellik, vb.)",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Döndürülecek maksimum sonuç sayısı (varsayılan: 5)",
+                    },
                 },
-                "top_k": {
-                    "type": "integer",
-                    "description": "Döndürülecek maksimum sonuç sayısı (varsayılan: 5)",
-                    "default": 5,
-                },
+                "required": ["query"],
             },
-            "required": ["query"],
         },
     },
     {
-        "name": "get_product",
-        "description": "Ürün ID/kodu ile tek bir ürünün tam detayını getirir.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "product_id": {
-                    "type": "string",
-                    "description": "Ürün ID veya SKU kodu",
-                }
+        "type": "function",
+        "function": {
+            "name": "get_product",
+            "description": "Ürün ID/kodu ile tek bir ürünün tam detayını getirir.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "product_id": {
+                        "type": "string",
+                        "description": "Ürün ID veya SKU kodu",
+                    }
+                },
+                "required": ["product_id"],
             },
-            "required": ["product_id"],
         },
     },
     {
-        "name": "list_categories",
-        "description": "Katalogdaki tüm ürün kategorilerini listeler.",
-        "input_schema": {"type": "object", "properties": {}, "required": []},
-    },
-    {
-        "name": "products_by_category",
-        "description": "Belirli bir kategorideki ürünleri listeler.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "category": {
-                    "type": "string",
-                    "description": "Kategori adı (list_categories ile öğrenilebilir)",
-                }
-            },
-            "required": ["category"],
+        "type": "function",
+        "function": {
+            "name": "list_categories",
+            "description": "Katalogdaki tüm ürün kategorilerini listeler.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
     {
-        "name": "handoff_to_human",
-        "description": (
-            "Konuşmayı insan temsilciye devreder. "
-            "Müşteri insan istemesi, iade/şikayet/özel teklif talep etmesi "
-            "veya sorunun çözülemediği durumlarda kullan."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "reason": {
-                    "type": "string",
-                    "description": "Devir nedeni (kısa, İngilizce veya Türkçe)",
+        "type": "function",
+        "function": {
+            "name": "products_by_category",
+            "description": "Belirli bir kategorideki ürünleri listeler.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": "Kategori adı (list_categories ile öğrenilebilir)",
+                    }
                 },
-                "summary": {
-                    "type": "string",
-                    "description": "Konuşma özeti (temsilci için)",
-                },
+                "required": ["category"],
             },
-            "required": ["reason", "summary"],
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "handoff_to_human",
+            "description": (
+                "Konuşmayı insan temsilciye devreder. "
+                "Müşteri insan istemesi, iade/şikayet/özel teklif talep etmesi "
+                "veya sorunun çözülemediği durumlarda kullan."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "Devir nedeni (kısa)",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "Konuşma özeti (temsilci için)",
+                    },
+                },
+                "required": ["reason", "summary"],
+            },
         },
     },
 ]
@@ -114,7 +128,7 @@ class SalesAgent:
         self._catalog = catalog
         self._store = store
         self._settings = get_settings()
-        self._client = anthropic.AsyncAnthropic(api_key=self._settings.ANTHROPIC_API_KEY)
+        self._client = AsyncOpenAI(api_key=self._settings.OPENAI_API_KEY)
 
     def _system_prompt(self) -> str:
         return (
@@ -125,7 +139,7 @@ class SalesAgent:
             "• Fiyat, stok, özellik bilgilerini doğru aktar.\n"
             "• Satın alma sürecinde yardımcı ol.\n"
             "• Kataloğda olmayan, iade/şikayet veya insan gerektiren durumlarda "
-            "handoff_to_human aracını kullan.\n\n"
+            "handoff_to_human fonksiyonunu kullan.\n\n"
             "Kurallar:\n"
             "• Türkçe yaz, samimi ve yardımsever ol.\n"
             "• Kısa mesajlar gönder (WhatsApp formatına uygun).\n"
@@ -140,92 +154,109 @@ class SalesAgent:
         Döner: (yanıt_metni, handoff_oldu_mu)
         """
         messages = self._store.get_messages(phone)
-        messages.append({"role": "user", "content": user_text})
+        # Sistem mesajı her seferinde başa eklenir (geçmişte saklanmaz)
+        full_messages = [{"role": "system", "content": self._system_prompt()}] + messages
+        full_messages.append({"role": "user", "content": user_text})
 
         handoff = False
         reply_text = ""
 
-        # Agentic döngü: araç kullanımı bitene kadar devam et
+        # Agentic döngü
         while True:
-            response = await self._client.messages.create(
-                model="claude-opus-4-6",
-                max_tokens=1024,
-                system=self._system_prompt(),
+            response = await self._client.chat.completions.create(
+                model=self._settings.OPENAI_MODEL,
                 tools=TOOLS,
-                messages=messages,
+                tool_choice="auto",
+                messages=full_messages,
             )
 
-            # Assistant mesajını geçmişe ekle
-            messages.append({"role": "assistant", "content": response.content})
+            msg = response.choices[0].message
+            finish_reason = response.choices[0].finish_reason
 
-            if response.stop_reason == "end_turn":
-                # Metin yanıtı al
-                for block in response.content:
-                    if hasattr(block, "text"):
-                        reply_text = block.text
+            # Mesajı geçmişe ekle
+            full_messages.append(msg)
+
+            if finish_reason == "stop":
+                reply_text = msg.content or ""
                 break
 
-            if response.stop_reason == "tool_use":
-                tool_results = []
-                for block in response.content:
-                    if block.type != "tool_use":
-                        continue
-                    result, should_handoff = self._run_tool(phone, block.name, block.input)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
+            if finish_reason == "tool_calls" and msg.tool_calls:
+                for tc in msg.tool_calls:
+                    fn_name = tc.function.name
+                    try:
+                        fn_args = json.loads(tc.function.arguments)
+                    except json.JSONDecodeError:
+                        fn_args = {}
+
+                    result, should_handoff = self._run_tool(phone, fn_name, fn_args)
                     if should_handoff:
                         handoff = True
 
-                messages.append({"role": "user", "content": tool_results})
+                    full_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result,
+                    })
 
                 if handoff:
-                    # Handoff sonrası son bir yanıt al ve döngüyü kır
-                    final = await self._client.messages.create(
-                        model="claude-opus-4-6",
-                        max_tokens=512,
-                        system=self._system_prompt(),
-                        tools=TOOLS,
-                        messages=messages,
+                    # Handoff sonrası son bir yanıt al
+                    final = await self._client.chat.completions.create(
+                        model=self._settings.OPENAI_MODEL,
+                        messages=full_messages,
                     )
-                    for block in final.content:
-                        if hasattr(block, "text"):
-                            reply_text = block.text
+                    reply_text = final.choices[0].message.content or ""
                     break
             else:
-                # Bilinmeyen stop_reason
+                reply_text = msg.content or ""
                 break
 
-        self._store.set_messages(phone, messages)
+        # Sistem mesajını çıkar, sadece user/assistant/tool geçmişini kaydet
+        history = [m for m in full_messages if not (
+            isinstance(m, dict) and m.get("role") == "system"
+        )]
+        # openai ChatCompletionMessage nesnelerini dict'e çevir
+        history_dicts = []
+        for m in history:
+            if isinstance(m, dict):
+                history_dicts.append(m)
+            else:
+                # ChatCompletionMessage nesnesi
+                d: dict[str, Any] = {"role": m.role, "content": m.content or ""}
+                if m.tool_calls:
+                    d["tool_calls"] = [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                        for tc in m.tool_calls
+                    ]
+                history_dicts.append(d)
+
+        self._store.set_messages(phone, history_dicts)
         return reply_text, handoff
 
     # ── Araç çalıştırıcı ──────────────────────────────────────────────────
 
     def _run_tool(self, phone: str, name: str, inputs: dict) -> tuple[str, bool]:
-        """Aracı çalıştırır, (sonuç_metni, handoff_mu) döner."""
         try:
             if name == "search_products":
                 return self._tool_search(inputs), False
-
             if name == "get_product":
                 return self._tool_get_product(inputs), False
-
             if name == "list_categories":
                 return self._tool_list_categories(), False
-
             if name == "products_by_category":
                 return self._tool_by_category(inputs), False
-
             if name == "handoff_to_human":
                 return self._tool_handoff(phone, inputs), True
-
             return f"Bilinmeyen araç: {name}", False
-
         except Exception as exc:
             log.exception("Araç hatası [%s]: %s", name, exc)
-            return f"Araç çalışırken hata: {exc}", False
+            return f"Araç hatası: {exc}", False
 
     def _tool_search(self, inputs: dict) -> str:
         query = inputs.get("query", "")
