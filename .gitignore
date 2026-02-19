@@ -1,0 +1,31 @@
+# Ortam değişkenleri - KESİNLİKLE commit etme
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Veri dosyaları (isteğe bağlı - büyük dosyaları dışla)
+data/conversations/
+data/handoffs.jsonl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
